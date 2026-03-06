@@ -12,11 +12,7 @@ public static class TestMod
     public static string ButtonText { get; set; } = "Skill Issue";
 
     [Hook("DidActivate", ClassName = "StandardLevelDetailViewController")]
-    public static void OnLevelScreenActivate(
-        StandardLevelDetailViewController self,
-        bool firstActivation,
-        bool addedToHierarchy,
-        bool screenSystemEnabling)
+    public static void OnLevelScreenActivate(StandardLevelDetailViewController self, bool firstActivation, bool addedToHierarchy, bool screenSystemEnabling)
     {
         OnLevelScreenActivate(self, firstActivation, addedToHierarchy, screenSystemEnabling);
 
@@ -59,5 +55,6 @@ public class GameObject
 public class CurvedTextMeshPro
 {
     public void set_Text(string text) { }
+
     public string get_Text() => default;
 }

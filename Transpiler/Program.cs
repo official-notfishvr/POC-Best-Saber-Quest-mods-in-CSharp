@@ -1,6 +1,6 @@
 using System;
-using System.IO;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -21,7 +21,7 @@ class Program
         }
 
         string outputDir = args.Length > 1 ? args[1] : "output";
-        
+
         try
         {
             if (args[0] == "--dir")
@@ -47,33 +47,33 @@ class Program
     static void ProcessDirectory(string inputDir, string outputDir)
     {
         Directory.CreateDirectory(outputDir);
-        
+
         var csFiles = Directory.GetFiles(inputDir, "*.cs", SearchOption.AllDirectories);
         var transpiler = new Transpiler();
-        
+
         foreach (var file in csFiles)
         {
             Console.WriteLine($"Processing: {file}");
             var code = File.ReadAllText(file);
             transpiler.AddSource(code, file);
         }
-        
+
         transpiler.Compile();
         transpiler.GenerateOutput(outputDir);
-        
+
         Console.WriteLine($"Generated {transpiler.GeneratedFiles.Count} file(s) in {outputDir}");
     }
 
     static void ProcessFile(string inputFile, string outputDir)
     {
         Directory.CreateDirectory(outputDir);
-        
+
         var code = File.ReadAllText(inputFile);
         var transpiler = new Transpiler();
         transpiler.AddSource(code, inputFile);
         transpiler.Compile();
         transpiler.GenerateOutput(outputDir);
-        
+
         Console.WriteLine($"Generated {transpiler.GeneratedFiles.Count} file(s) in {outputDir}");
     }
 }
@@ -103,24 +103,18 @@ class Transpiler
     public void Compile()
     {
         var syntaxTrees = _sources.Select(s => CSharpSyntaxTree.ParseText(s.Source, path: s.Path)).ToList();
-        
-        var options = new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
-            .WithAllowUnsafe(true);
-        
-        var references = new List<MetadataReference>
-        {
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(Console).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(Attribute).Assembly.Location),
-        };
+
+        var options = new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary).WithAllowUnsafe(true);
+
+        var references = new List<MetadataReference> { MetadataReference.CreateFromFile(typeof(object).Assembly.Location), MetadataReference.CreateFromFile(typeof(Console).Assembly.Location), MetadataReference.CreateFromFile(typeof(Attribute).Assembly.Location) };
 
         _compilation = CSharpCompilation.Create("TempAssembly", syntaxTrees, references, options);
-        
+
         foreach (var tree in syntaxTrees)
         {
             ExtractUsingDirectives(tree);
         }
-        
+
         foreach (var tree in syntaxTrees)
         {
             _semanticModel = _compilation.GetSemanticModel(tree);
@@ -131,7 +125,7 @@ class Transpiler
     private void ExtractUsingDirectives(SyntaxTree tree)
     {
         var root = tree.GetRoot();
-        
+
         foreach (var usingDirective in root.DescendantNodes().OfType<UsingDirectiveSyntax>())
         {
             var nsName = usingDirective.Name?.ToString() ?? "";
@@ -145,7 +139,7 @@ class Transpiler
     private void ProcessSyntaxTree(SyntaxTree tree)
     {
         var root = tree.GetRoot();
-        
+
         foreach (var node in root.DescendantNodes())
         {
             if (node is ClassDeclarationSyntax classDecl)
@@ -184,17 +178,12 @@ class Transpiler
             IsStatic = classDecl.Modifiers.Any(m => m.Text == "static"),
             Methods = new List<MethodInfo>(),
             Fields = new List<FieldInfo>(),
-            Properties = new List<PropertyInfo>()
+            Properties = new List<PropertyInfo>(),
         };
 
-        var modAttr = classDecl.AttributeLists
-            .SelectMany(a => a.Attributes)
-            .FirstOrDefault(a => a.Name.ToString() == "Mod" || a.Name.ToString() == "ModAttribute");
+        var modAttr = classDecl.AttributeLists.SelectMany(a => a.Attributes).FirstOrDefault(a => a.Name.ToString() == "Mod" || a.Name.ToString() == "ModAttribute");
 
-        var hasHookMethod = classDecl.Members
-            .OfType<MethodDeclarationSyntax>()
-            .Any(m => m.AttributeLists.SelectMany(a => a.Attributes)
-                .Any(a => a.Name.ToString() == "Hook" || a.Name.ToString() == "HookAttribute"));
+        var hasHookMethod = classDecl.Members.OfType<MethodDeclarationSyntax>().Any(m => m.AttributeLists.SelectMany(a => a.Attributes).Any(a => a.Name.ToString() == "Hook" || a.Name.ToString() == "HookAttribute"));
 
         var isStubType = modAttr == null && !hasHookMethod && !classInfo.IsStatic;
 
@@ -205,7 +194,7 @@ class Transpiler
             {
                 _typeNamespaces[classInfo.Name] = gameNamespace;
             }
-            
+
             foreach (var member in classDecl.Members)
             {
                 if (member is FieldDeclarationSyntax fieldDecl)
@@ -232,7 +221,7 @@ class Transpiler
         {
             var idArg = modAttr.ArgumentList.Arguments[0];
             var versionArg = modAttr.ArgumentList.Arguments[1];
-            
+
             if (idArg.Expression is LiteralExpressionSyntax idLiteral)
                 _modInfo.Id = idLiteral.Token.ValueText;
             if (versionArg.Expression is LiteralExpressionSyntax versionLiteral)
@@ -257,31 +246,23 @@ class Transpiler
                 foreach (var variable in fieldDecl.Declaration.Variables)
                 {
                     var fieldName = variable.Identifier.Text;
-                    classInfo.Fields.Add(new FieldInfo
-                    {
-                        Name = fieldName,
-                        Type = fieldType
-                    });
+                    classInfo.Fields.Add(new FieldInfo { Name = fieldName, Type = fieldType });
                     _fieldTypes[(classInfo.Name, fieldName)] = fieldType;
                 }
             }
             else if (member is PropertyDeclarationSyntax propDecl)
             {
-                var hasConfigAttr = propDecl.AttributeLists
-                    .SelectMany(a => a.Attributes)
-                    .Any(a => a.Name.ToString() == "Config" || a.Name.ToString() == "ConfigAttribute");
+                var hasConfigAttr = propDecl.AttributeLists.SelectMany(a => a.Attributes).Any(a => a.Name.ToString() == "Config" || a.Name.ToString() == "ConfigAttribute");
 
                 if (hasConfigAttr && classInfo.IsStatic)
                 {
-                    var configAttr = propDecl.AttributeLists
-                        .SelectMany(a => a.Attributes)
-                        .FirstOrDefault(a => a.Name.ToString() == "Config" || a.Name.ToString() == "ConfigAttribute");
+                    var configAttr = propDecl.AttributeLists.SelectMany(a => a.Attributes).FirstOrDefault(a => a.Name.ToString() == "Config" || a.Name.ToString() == "ConfigAttribute");
 
                     var configInfo = new ConfigValueInfo
                     {
                         Name = propDecl.Identifier.Text,
                         Type = propDecl.Type.ToString(),
-                        Description = ""
+                        Description = "",
                     };
 
                     if (propDecl.Initializer != null)
@@ -292,13 +273,15 @@ class Transpiler
                     _configValues.Add(configInfo);
                 }
 
-                classInfo.Properties.Add(new PropertyInfo
-                {
-                    Name = propDecl.Identifier.Text,
-                    Type = propDecl.Type.ToString(),
-                    HasGetter = propDecl.AccessorList?.Accessors.Any(a => a.Keyword.Text == "get") ?? false,
-                    HasSetter = propDecl.AccessorList?.Accessors.Any(a => a.Keyword.Text == "set") ?? false
-                });
+                classInfo.Properties.Add(
+                    new PropertyInfo
+                    {
+                        Name = propDecl.Identifier.Text,
+                        Type = propDecl.Type.ToString(),
+                        HasGetter = propDecl.AccessorList?.Accessors.Any(a => a.Keyword.Text == "get") ?? false,
+                        HasSetter = propDecl.AccessorList?.Accessors.Any(a => a.Keyword.Text == "set") ?? false,
+                    }
+                );
             }
         }
 
@@ -320,7 +303,7 @@ class Transpiler
                 }
             }
         }
-        
+
         return "";
     }
 
@@ -336,7 +319,7 @@ class Transpiler
         {
             return ns;
         }
-        
+
         if (_semanticModel != null)
         {
             var typeInfo = _semanticModel.Compilation.GetTypeByMetadataName(typeName);
@@ -348,7 +331,7 @@ class Transpiler
                 return cppNamespace;
             }
         }
-        
+
         foreach (var importedNs in _importedNamespaces)
         {
             var potentialSymbol = _semanticModel?.Compilation.GetTypeByMetadataName($"{importedNs}.{typeName}");
@@ -359,7 +342,7 @@ class Transpiler
                 return cppNamespace;
             }
         }
-        
+
         return "GlobalNamespace";
     }
 
@@ -379,42 +362,33 @@ class Transpiler
 
     private void ProcessMethod(MethodDeclarationSyntax methodDecl, ClassInfo? classInfo = null)
     {
-        var hasHookAttr = methodDecl.AttributeLists
-            .SelectMany(a => a.Attributes)
-            .Any(a => a.Name.ToString() == "Hook" || a.Name.ToString() == "HookAttribute");
+        var hasHookAttr = methodDecl.AttributeLists.SelectMany(a => a.Attributes).Any(a => a.Name.ToString() == "Hook" || a.Name.ToString() == "HookAttribute");
 
         var methodInfo = new MethodInfo
         {
             Name = methodDecl.Identifier.Text,
             ReturnType = methodDecl.ReturnType.ToString(),
-            Parameters = methodDecl.ParameterList.Parameters
-                .Select(p => new ParameterInfo
-                {
-                    Name = p.Identifier.Text,
-                    Type = p.Type?.ToString() ?? ""
-                }).ToList(),
+            Parameters = methodDecl.ParameterList.Parameters.Select(p => new ParameterInfo { Name = p.Identifier.Text, Type = p.Type?.ToString() ?? "" }).ToList(),
             IsStatic = methodDecl.Modifiers.Any(m => m.Text == "static"),
             IsHook = hasHookAttr,
-            Body = methodDecl.Body
+            Body = methodDecl.Body,
         };
 
         classInfo?.Methods.Add(methodInfo);
 
         if (hasHookAttr)
         {
-            var hookAttr = methodDecl.AttributeLists
-                .SelectMany(a => a.Attributes)
-                .FirstOrDefault(a => a.Name.ToString() == "Hook" || a.Name.ToString() == "HookAttribute");
+            var hookAttr = methodDecl.AttributeLists.SelectMany(a => a.Attributes).FirstOrDefault(a => a.Name.ToString() == "Hook" || a.Name.ToString() == "HookAttribute");
 
             var targetClass = "";
             var targetMethod = methodDecl.Identifier.Text;
-            
+
             if (hookAttr?.ArgumentList?.Arguments.Count > 0)
             {
                 foreach (var arg in hookAttr.ArgumentList.Arguments)
                 {
                     var value = arg.Expression is LiteralExpressionSyntax literal ? literal.Token.ValueText : "";
-                    
+
                     if (arg.NameColon != null)
                     {
                         var name = arg.NameColon.Name.Identifier.Text;
@@ -436,24 +410,26 @@ class Transpiler
                 }
             }
 
-            _hooks.Add(new HookInfo
-            {
-                HookName = methodDecl.Identifier.Text + "Hook",
-                TargetClass = targetClass,
-                TargetMethod = targetMethod,
-                Method = methodInfo
-            });
+            _hooks.Add(
+                new HookInfo
+                {
+                    HookName = methodDecl.Identifier.Text + "Hook",
+                    TargetClass = targetClass,
+                    TargetMethod = targetMethod,
+                    Method = methodInfo,
+                }
+            );
         }
     }
 
     public void GenerateOutput(string outputDir)
     {
         Directory.CreateDirectory(outputDir);
-        
+
         GenerateConfigHpp(outputDir);
         GenerateMainCpp(outputDir);
         GenerateMainHpp(outputDir);
-        
+
         foreach (var classInfo in _classes.Where(c => !c.IsStatic))
         {
             GenerateClassFiles(classInfo, outputDir);
@@ -463,7 +439,7 @@ class Transpiler
     private void GenerateConfigHpp(string outputDir)
     {
         var sb = new CodeBuilder();
-        
+
         sb.AppendLine("#pragma once");
         sb.AppendLine();
         sb.AppendLine("#define MOD_EXPORT __attribute__((visibility(\"default\")))");
@@ -479,7 +455,7 @@ class Transpiler
         {
             var cppType = _typeMapper.MapType(config.Type);
             var defaultValue = config.DefaultValue;
-            
+
             if (config.Type == "string")
             {
                 sb.AppendLine($"static {cppType} {config.Name} = il2cpp_utils::newcsstr(\"{defaultValue.Trim('"')}\");");
@@ -510,9 +486,9 @@ class Transpiler
                 bodyGenerator.Generate(hook.Method.Body);
             }
         }
-        
+
         var sb = new CodeBuilder();
-        
+
         sb.AppendLine("#include \"main.hpp\"");
         sb.AppendLine("#include \"scotland2/shared/modloader.h\"");
         sb.AppendLine();
@@ -525,12 +501,12 @@ class Transpiler
                 sb.AppendLine($"#include \"GlobalNamespace/{hook.TargetClass}.hpp\"");
             }
         }
-        
+
         foreach (var usedType in _usedTypes)
         {
             if (usedType == "T" || usedType.Length <= 1)
                 continue;
-                
+
             var ns = GetNamespaceForType(usedType);
             var includePath = ns.Replace("::", "/");
             if (includedClasses.Add(usedType))
@@ -578,7 +554,7 @@ class Transpiler
     {
         var returnType = _typeMapper.MapType(hook.Method.ReturnType);
         var args = new List<string>();
-        
+
         foreach (var param in hook.Method.Parameters)
         {
             var paramType = _typeMapper.MapType(param.Type);
@@ -613,7 +589,7 @@ class Transpiler
     private void GenerateMainHpp(string outputDir)
     {
         var sb = new CodeBuilder();
-        
+
         sb.AppendLine("#pragma once");
         sb.AppendLine();
         sb.AppendLine("#include \"scotland2/shared/modloader.h\"");
@@ -638,16 +614,16 @@ class Transpiler
     {
         var hppPath = Path.Combine(outputDir, "include", $"{classInfo.Name}.hpp");
         Directory.CreateDirectory(Path.GetDirectoryName(hppPath)!);
-        
+
         var sb = new CodeBuilder();
         sb.AppendLine("#pragma once");
         sb.AppendLine();
-        
+
         foreach (var field in classInfo.Fields)
         {
             sb.AppendLine($"// Field: {field.Type} {field.Name}");
         }
-        
+
         foreach (var method in classInfo.Methods)
         {
             sb.AppendLine($"// Method: {method.ReturnType} {method.Name}({string.Join(", ", method.Parameters.Select(p => $"{p.Type} {p.Name}"))})");
@@ -741,7 +717,7 @@ class StatementGenerator
         _getNamespaceForType = getNamespaceForType;
         _fieldTypes = fieldTypes;
         _methodReturnTypes = methodReturnTypes;
-        
+
         if (hook.Method.Parameters.Count > 0)
         {
             var selfParam = hook.Method.Parameters[0];
@@ -755,8 +731,9 @@ class StatementGenerator
     public List<string> Generate(BlockSyntax? body)
     {
         var lines = new List<string>();
-        
-        if (body == null) return lines;
+
+        if (body == null)
+            return lines;
 
         foreach (var statement in body.Statements)
         {
@@ -779,9 +756,7 @@ class StatementGenerator
                 lines.Add(GenerateExpression(exprStmt.Expression) + ";");
                 break;
             case ReturnStatementSyntax returnStmt:
-                var returnValue = returnStmt.Expression != null 
-                    ? GenerateExpression(returnStmt.Expression) 
-                    : "";
+                var returnValue = returnStmt.Expression != null ? GenerateExpression(returnStmt.Expression) : "";
                 lines.Add($"return {returnValue};");
                 break;
             case IfStatementSyntax ifStmt:
@@ -805,14 +780,14 @@ class StatementGenerator
     {
         var lines = new List<string>();
         var typeStr = localDecl.Declaration.Type.ToString();
-        
+
         foreach (var variable in localDecl.Declaration.Variables)
         {
             var name = variable.Identifier.Text;
             if (variable.Initializer != null)
             {
                 var init = GenerateExpression(variable.Initializer.Value);
-                
+
                 string actualType = "auto";
                 if (typeStr == "var")
                 {
@@ -821,7 +796,7 @@ class StatementGenerator
                         if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
                         {
                             var methodName = memberAccess.Name.Identifier.Text;
-                            
+
                             if (methodName == "GetComponentInChildren" || methodName == "GetComponent")
                             {
                                 if (memberAccess.Name is GenericNameSyntax genericName && genericName.TypeArgumentList.Arguments.Count > 0)
@@ -855,7 +830,7 @@ class StatementGenerator
                     {
                         var objExpr = fieldAccess.Expression;
                         var memberName = fieldAccess.Name.Identifier.Text;
-                        
+
                         if (objExpr is IdentifierNameSyntax idSyntax)
                         {
                             var objVarName = idSyntax.Identifier.Text;
@@ -876,7 +851,7 @@ class StatementGenerator
                     actualType = _typeMapper.MapType(typeStr);
                     _varTypes[name] = typeStr;
                 }
-                
+
                 lines.Add($"{actualType} {name} = {init};");
             }
             else
@@ -906,14 +881,14 @@ class StatementGenerator
                 if (token.IsKind(SyntaxKind.TrueLiteralExpression) || token.IsKind(SyntaxKind.FalseLiteralExpression))
                     return token.Text;
                 return token.ValueText;
-            
+
             case IdentifierNameSyntax identifier:
                 return identifier.Identifier.Text;
-            
+
             case MemberAccessExpressionSyntax memberAccess:
                 var obj = GenerateExpression(memberAccess.Expression);
                 var member = memberAccess.Name.Identifier.Text;
-                
+
                 if (member.StartsWith("get_") || member.StartsWith("set_"))
                 {
                     var prefix = member.Substring(0, 4);
@@ -922,12 +897,11 @@ class StatementGenerator
                     return $"{obj}->{prefix}{lowerRest}()";
                 }
                 return $"{obj}->{member}";
-            
+
             case InvocationExpressionSyntax invocation:
                 var methodExpr = invocation.Expression;
-                var args = string.Join(", ", invocation.ArgumentList.Arguments
-                    .Select(a => GenerateExpression(a.Expression)));
-                
+                var args = string.Join(", ", invocation.ArgumentList.Arguments.Select(a => GenerateExpression(a.Expression)));
+
                 if (methodExpr is IdentifierNameSyntax identifierName)
                 {
                     if (identifierName.Identifier.Text == _hook.Method.Name)
@@ -936,22 +910,22 @@ class StatementGenerator
                     }
                     return $"{identifierName.Identifier.Text}({args})";
                 }
-                
+
                 if (methodExpr is MemberAccessExpressionSyntax memberAccessExpr)
                 {
                     var methodName = memberAccessExpr.Name.Identifier.Text;
                     var objExpr = GenerateExpression(memberAccessExpr.Expression);
-                    
+
                     if (methodName == _hook.Method.Name && objExpr == "this")
                     {
                         return $"{_hook.HookName}({args})";
                     }
-                    
+
                     if (methodName == "WriteLine" || methodName == "Write")
                     {
                         return $"PaperLogger.info({args})";
                     }
-                    
+
                     if (methodName.StartsWith("get_") || methodName.StartsWith("set_"))
                     {
                         var prefix = methodName.Substring(0, 4);
@@ -959,7 +933,7 @@ class StatementGenerator
                         var lowerRest = char.ToLower(rest[0]) + rest.Substring(1);
                         return $"{objExpr}->{prefix}{lowerRest}({args})";
                     }
-                    
+
                     if (methodName == "GetComponentInChildren" || methodName == "GetComponent")
                     {
                         string typeArg = "";
@@ -975,58 +949,56 @@ class StatementGenerator
                         var ns = _getNamespaceForType(typeArg);
                         return $"{objExpr}->GetComponentInChildren<{ns}::{typeArg}*>()";
                     }
-                    
+
                     return $"{objExpr}->{methodName}({args})";
                 }
-                
+
                 var method = GenerateExpression(methodExpr);
                 return $"{method}({args})";
-            
+
             case BinaryExpressionSyntax binary:
                 var left = GenerateExpression(binary.Left);
                 var right = GenerateExpression(binary.Right);
                 return $"{left} {binary.OperatorToken.Text} {right}";
-            
+
             case PrefixUnaryExpressionSyntax prefixUnary:
                 var operand = GenerateExpression(prefixUnary.Operand);
                 return $"{prefixUnary.OperatorToken.Text}{operand}";
-            
+
             case PostfixUnaryExpressionSyntax postfixUnary:
                 operand = GenerateExpression(postfixUnary.Operand);
                 return $"{operand}{postfixUnary.OperatorToken.Text}";
-            
+
             case AssignmentExpressionSyntax assignment:
                 var assignLeft = GenerateExpression(assignment.Left);
                 var assignRight = GenerateExpression(assignment.Right);
                 return $"{assignLeft} {assignment.OperatorToken.Text} {assignRight}";
-            
+
             case ParenthesizedExpressionSyntax paren:
                 return $"({GenerateExpression(paren.Expression)})";
-            
+
             case ObjectCreationExpressionSyntax objCreation:
                 var objType = objCreation.Type.ToString();
-                var objArgs = objCreation.ArgumentList != null
-                    ? string.Join(", ", objCreation.ArgumentList.Arguments.Select(a => GenerateExpression(a.Expression)))
-                    : "";
+                var objArgs = objCreation.ArgumentList != null ? string.Join(", ", objCreation.ArgumentList.Arguments.Select(a => GenerateExpression(a.Expression))) : "";
                 return $"new {objType}({objArgs})";
-            
+
             case ThisExpressionSyntax:
                 return "this";
-            
+
             case CastExpressionSyntax cast:
                 var castType = _typeMapper.MapType(cast.Type.ToString());
                 var castExpr = GenerateExpression(cast.Expression);
                 return $"static_cast<{castType}>({castExpr})";
-            
+
             case ConditionalExpressionSyntax conditional:
                 var cond = GenerateExpression(conditional.Condition);
                 var whenTrue = GenerateExpression(conditional.WhenTrue);
                 var whenFalse = GenerateExpression(conditional.WhenFalse);
                 return $"({cond} ? {whenTrue} : {whenFalse})";
-            
+
             case GenericNameSyntax genericName:
                 return genericName.Identifier.Text;
-            
+
             default:
                 return $"/* TODO: {expr.GetType().Name} */";
         }
@@ -1037,7 +1009,7 @@ class StatementGenerator
         var lines = new List<string>();
         var condition = GenerateExpression(ifStmt.Condition);
         lines.Add($"if ({condition}) {{");
-        
+
         if (ifStmt.Statement is BlockSyntax block)
         {
             foreach (var stmt in block.Statements)
@@ -1049,9 +1021,9 @@ class StatementGenerator
         {
             lines.AddRange(GenerateStatement(ifStmt.Statement).Select(l => "    " + l));
         }
-        
+
         lines.Add("}");
-        
+
         if (ifStmt.Else != null)
         {
             lines.Add("else {");
@@ -1082,9 +1054,9 @@ class StatementGenerator
         var type = _typeMapper.MapType(forEachStmt.Type.ToString());
         var identifier = forEachStmt.Identifier.Text;
         var expression = GenerateExpression(forEachStmt.Expression);
-        
+
         lines.Add($"for (auto& {identifier} : {expression}) {{");
-        
+
         if (forEachStmt.Statement is BlockSyntax block)
         {
             foreach (var stmt in block.Statements)
@@ -1092,7 +1064,7 @@ class StatementGenerator
                 lines.AddRange(GenerateStatement(stmt).Select(l => "    " + l));
             }
         }
-        
+
         lines.Add("}");
         return lines;
     }
@@ -1101,9 +1073,9 @@ class StatementGenerator
     {
         var lines = new List<string>();
         var condition = GenerateExpression(whileStmt.Condition);
-        
+
         lines.Add($"while ({condition}) {{");
-        
+
         if (whileStmt.Statement is BlockSyntax block)
         {
             foreach (var stmt in block.Statements)
@@ -1111,7 +1083,7 @@ class StatementGenerator
                 lines.AddRange(GenerateStatement(stmt).Select(l => "    " + l));
             }
         }
-        
+
         lines.Add("}");
         return lines;
     }
