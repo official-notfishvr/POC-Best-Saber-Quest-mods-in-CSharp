@@ -1,4 +1,4 @@
-namespace CsToCppTranspiler;
+namespace Transpiler;
 
 [AttributeUsage(AttributeTargets.Method)]
 public class HookAttribute : Attribute

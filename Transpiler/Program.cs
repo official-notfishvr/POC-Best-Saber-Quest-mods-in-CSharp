@@ -6,7 +6,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace CsToCppTranspiler;
+namespace Transpiler;
 
 class Program
 {
@@ -14,8 +14,9 @@ class Program
     {
         if (args.Length < 1)
         {
-            Console.WriteLine("Usage: CsToCppTranspiler <input.cs> [output_dir]");
-            Console.WriteLine("       CsToCppTranspiler --dir <input_dir> [output_dir]");
+            // Transpiler.exe --dir C:\Users\Administrator\Downloads\Files\fit\SampleMod C:\Users\Administrator\Downloads\Files\fit\output
+            Console.WriteLine("Usage: Transpiler <input.cs> [output_dir]");
+            Console.WriteLine("       Transpiler --dir <input_dir> [output_dir]");
             return 1;
         }
 
@@ -417,14 +418,6 @@ class Transpiler
         sb.AppendLine("Configuration &getConfig() {");
         sb.AppendLine("    static Configuration config(modInfo);");
         sb.AppendLine("    return config;");
-        sb.AppendLine("}");
-        sb.AppendLine();
-
-        sb.AppendLine("MOD_EXTERN_FUNC void setup(CModInfo *info) noexcept {");
-        sb.AppendLine("    *info = modInfo.to_c();");
-        sb.AppendLine("    getConfig().Load();");
-        sb.AppendLine("    Paper::Logger::RegisterFileContextId(PaperLogger.tag);");
-        sb.AppendLine("    PaperLogger.info(\"Completed setup!\");");
         sb.AppendLine("}");
         sb.AppendLine();
 

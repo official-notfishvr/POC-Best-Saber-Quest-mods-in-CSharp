@@ -1,4 +1,4 @@
-using CsToCppTranspiler;
+using Transpiler;
 
 namespace SampleMod;
 
@@ -31,6 +31,7 @@ public static class TestMod
     }
 }
 
+// would be auto gen by typegen when its done
 public class StandardLevelDetailViewController
 {
     public StandardLevelDetailView _standardLevelDetailView;

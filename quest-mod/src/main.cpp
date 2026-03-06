@@ -14,13 +14,6 @@ Configuration &getConfig() {
     return config;
 }
 
-MOD_EXTERN_FUNC void setup(CModInfo *info) noexcept {
-    *info = modInfo.to_c();
-    getConfig().Load();
-    Paper::Logger::RegisterFileContextId(PaperLogger.tag);
-    PaperLogger.info("Completed setup!");
-}
-
 MAKE_HOOK_MATCH(
     OnLevelScreenActivateHook,
     &GlobalNamespace::StandardLevelDetailViewController::DidActivate,
