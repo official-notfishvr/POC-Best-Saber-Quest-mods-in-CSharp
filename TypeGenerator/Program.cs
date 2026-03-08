@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace TypeGenerator;
@@ -12,6 +13,7 @@ class Program
 {
     static void Main(string[] args)
     {
+        // dotnet run --project c:\Users\Administrator\Downloads\Files\fit\TypeGenerator\TypeGenerator.csproj "C:\Users\Administrator\Downloads\Files\fit\quest-mod\extern\includes\bs-cordl\include" "C:\Users\Administrator\Downloads\Files\fit\TypeGenerator\Output"
         if (args.Length < 2)
         {
             Console.WriteLine("Usage: TypeGenerator <include-folder> <output-folder>");
@@ -234,6 +236,35 @@ class TypeStubGenerator
 
         writer.Flush();
         Console.WriteLine($"Generated {outputFile}");
+
+        WriteMetadata(outputFolder);
+    }
+
+    private void WriteMetadata(string outputFolder)
+    {
+        var metadataFile = Path.Combine(outputFolder, "GeneratedTypes.metadata.json");
+        var payload = _types
+            .OrderBy(entry => entry.Key.ns, StringComparer.Ordinal)
+            .ThenBy(entry => entry.Key.typeName, StringComparer.Ordinal)
+            .Select(entry => new GeneratedTypeMetadata
+            {
+                Namespace = entry.Value.Namespace,
+                TypeName = entry.Value.TypeName,
+                IsValueType = entry.Value.IsValueType,
+                IsInterface = entry.Value.IsInterface,
+                IsStatic = entry.Value.IsStatic,
+                IsAbstract = entry.Value.IsAbstract,
+                BaseType = entry.Value.BaseType,
+                Properties = entry.Value.Properties.OrderBy(property => property.Name, StringComparer.Ordinal).ToList(),
+                Fields = entry.Value.Fields.OrderBy(field => field.Name, StringComparer.Ordinal).ToList(),
+                Methods = entry.Value.Methods.OrderBy(method => method.Name, StringComparer.Ordinal).ThenBy(method => method.Parameters.Count).ToList(),
+            })
+            .ToList();
+
+        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
+
+        File.WriteAllText(metadataFile, json, new UTF8Encoding(false));
+        Console.WriteLine($"Generated {metadataFile}");
     }
 
     private void ProcessNamespace(string dir, string ns)
@@ -283,7 +314,90 @@ class TypeStubGenerator
             data.BaseType = ExtractBaseType(typeContent);
             data.Fields = ExtractFields(typeContent);
             data.Methods = ExtractMethods(typeContent);
+            data.Properties = InferProperties(data.Fields, ExtractAccessorNames(typeContent));
         }
+    }
+
+    private static HashSet<string> ExtractAccessorNames(string content)
+    {
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        var lines = content.Split('\n');
+
+        for (int i = 0; i < lines.Length - 1; i++)
+        {
+            var line = lines[i].Trim();
+            if (!line.StartsWith("/// @brief Method", StringComparison.Ordinal))
+                continue;
+
+            var declLine = lines[i + 1].Trim();
+            if (declLine.StartsWith("template <", StringComparison.Ordinal) && i + 2 < lines.Length)
+                declLine = lines[i + 2].Trim();
+
+            var match = Regex.Match(declLine, @"(?:inline\s+|static\s+|virtual\s+)+(.+?)\s+(\w+)\s*\(([^)]*)\)");
+            if (!match.Success)
+                continue;
+
+            var methodName = match.Groups[2].Value;
+            if (methodName.StartsWith("get_", StringComparison.Ordinal) || methodName.StartsWith("set_", StringComparison.Ordinal))
+                result.Add(methodName);
+        }
+
+        return result;
+    }
+
+    private static List<GeneratedPropertyInfo> InferProperties(IEnumerable<FieldInfo> fields, IReadOnlySet<string> accessorNames)
+    {
+        var fieldList = fields.ToList();
+        var properties = new List<GeneratedPropertyInfo>();
+        var seenNames = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var field in fieldList)
+        {
+            if (!field.Name.StartsWith("_", StringComparison.Ordinal) || field.Name.Length < 2)
+                continue;
+
+            var propertyName = char.ToLowerInvariant(field.Name[1]) + field.Name.Substring(2);
+            if (string.Equals(propertyName, "gameObject", StringComparison.Ordinal))
+                continue;
+            if (!seenNames.Add(propertyName))
+                continue;
+
+            properties.Add(
+                new GeneratedPropertyInfo
+                {
+                    Name = propertyName,
+                    Type = field.Type,
+                    HasGetter = true,
+                    HasSetter = true,
+                    BackingFieldName = accessorNames.Contains($"get_{propertyName}") || accessorNames.Contains($"set_{propertyName}") ? "" : field.Name,
+                }
+            );
+        }
+
+        var getterNames = accessorNames.Where(name => name.StartsWith("get_", StringComparison.Ordinal)).Select(name => name.Substring(4));
+        var setterNames = accessorNames.Where(name => name.StartsWith("set_", StringComparison.Ordinal)).Select(name => name.Substring(4));
+        foreach (var propertyName in getterNames.Concat(setterNames).Distinct(StringComparer.Ordinal))
+        {
+            if (!seenNames.Add(propertyName))
+                continue;
+
+            var backingFieldName = "_" + char.ToUpperInvariant(propertyName[0]) + propertyName.Substring(1);
+            if (!fieldList.Any(field => string.Equals(field.Name, backingFieldName, StringComparison.Ordinal)))
+                backingFieldName = fieldList.FirstOrDefault(field => string.Equals(field.Name, "_" + propertyName, StringComparison.Ordinal))?.Name;
+
+            properties.Add(
+                new GeneratedPropertyInfo
+                {
+                    Name = propertyName,
+                    Type = fieldList.FirstOrDefault(field => string.Equals(field.Name, backingFieldName, StringComparison.Ordinal))?.Type ?? "",
+                    HasGetter = getterNames.Contains(propertyName),
+                    HasSetter = setterNames.Contains(propertyName),
+                    BackingFieldName = backingFieldName,
+                }
+            );
+        }
+
+        return properties;
     }
 
     private List<FieldInfo> ExtractFields(string content)
@@ -395,10 +509,7 @@ class TypeStubGenerator
                 continue;
             if (methodName == "Main")
                 continue;
-            var isAccessor = methodName.StartsWith("get_")
-                || methodName.StartsWith("set_")
-                || methodName.StartsWith("add_")
-                || methodName.StartsWith("remove_");
+            var isAccessor = methodName.StartsWith("get_") || methodName.StartsWith("set_") || methodName.StartsWith("add_") || methodName.StartsWith("remove_");
             var keepAccessor = methodName == "get_gameObject" || methodName == "get_GameObject" || methodName == "set_text";
             if (isAccessor && !keepAccessor)
                 continue;
@@ -567,10 +678,7 @@ class TypeStubGenerator
         if (data.BaseType != null && !data.IsValueType && !isInterface)
         {
             var mapped = MapCppTypeToCs(data.BaseType, ns);
-            if ((mapped == "System.Object" || mapped == "global::System.Object")
-                && data.BaseType.EndsWith("::TextMeshProUGUI", StringComparison.Ordinal)
-                && !data.BaseType.Contains('<')
-                && !data.BaseType.Contains(','))
+            if ((mapped == "System.Object" || mapped == "global::System.Object") && data.BaseType.EndsWith("::TextMeshProUGUI", StringComparison.Ordinal) && !data.BaseType.Contains('<') && !data.BaseType.Contains(','))
             {
                 var firstBase = data.BaseType.Split(',')[0];
                 firstBase = Regex.Replace(firstBase, @"\b(public|private|protected|virtual)\b", "").Trim();
@@ -602,8 +710,6 @@ class TypeStubGenerator
         seenNames.Add(safeTypeName);
         var nestedNameConflicts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         nestedNameConflicts.Add(safeTypeName);
-        var aliasProperties = new List<(string aliasName, string backingName, string csType, bool isStatic)>();
-
         foreach (var field in data.Fields)
         {
             if (isInterface)
@@ -622,24 +728,6 @@ class TypeStubGenerator
 
             var staticMod = field.IsStatic ? "static " : "";
             writer.WriteLine($"{currentIndent}    public {staticMod}{csType} {fName};");
-
-            if (fName.Length > 1 && fName[0] == '_' && char.IsLower(fName[1]))
-            {
-                var alias = Sanitize(fName.Substring(1));
-                if (string.Equals(alias, "gameObject", StringComparison.Ordinal))
-                    continue;
-                if (seenNames.Add(alias))
-                {
-                    aliasProperties.Add((alias, fName, csType, field.IsStatic));
-                    nestedNameConflicts.Add(alias);
-                }
-            }
-        }
-
-        foreach (var alias in aliasProperties)
-        {
-            var staticMod = alias.isStatic ? "static " : "";
-            writer.WriteLine($"{currentIndent}    public {staticMod}{alias.csType} {alias.aliasName} {{ get => {alias.backingName}; set => {alias.backingName} = value; }}");
         }
 
         var seenSigs = new HashSet<string>();
@@ -655,19 +743,14 @@ class TypeStubGenerator
             nestedNameConflicts.Add(mName);
             var genericParams = method.GenericParameters ?? new List<string>();
             var csReturn = genericParams.Contains(method.ReturnType.Trim(), StringComparer.Ordinal) ? method.ReturnType.Trim() : MapCppTypeToCs(method.ReturnType, ns);
-            var paramTypes = method.Parameters
-                .Select(p => genericParams.Contains(p.Type.Trim(), StringComparer.Ordinal) ? p.Type.Trim() : MapCppTypeToCs(p.Type, ns))
-                .ToList();
+            var paramTypes = method.Parameters.Select(p => genericParams.Contains(p.Type.Trim(), StringComparer.Ordinal) ? p.Type.Trim() : MapCppTypeToCs(p.Type, ns)).ToList();
             var sigKey = $"{mName}`{genericParams.Count}|{string.Join(",", paramTypes)}";
             if (!seenSigs.Add(sigKey))
                 continue;
             if (!_generatedMembers.Add($"{typeSigKey}::M:{sigKey}:{method.IsStatic}"))
                 continue;
 
-            var args = string.Join(
-                ", ",
-                method.Parameters.Select((p, idx) => $"{paramTypes[idx]} {EscapeKeyword(Sanitize(p.Name))}")
-            );
+            var args = string.Join(", ", method.Parameters.Select((p, idx) => $"{paramTypes[idx]} {EscapeKeyword(Sanitize(p.Name))}"));
             var returnType = mName == ".ctor" ? "" : (csReturn + " ");
             var methodNameActual = mName == ".ctor" ? Sanitize(typeNameFinal) : mName;
             var genericSuffix = genericParams.Count == 0 ? "" : "<" + string.Join(", ", genericParams.Select(Sanitize)) + ">";
@@ -773,10 +856,7 @@ class TypeStubGenerator
             }
 
             var isStruct = _types.TryGetValue((ns, fullCpp), out var pData) && pData.IsValueType;
-            if (!isStruct
-                && ns == "GlobalNamespace"
-                && parentCppName.StartsWith("GameplayModifiers_PlayerSaveDataV1", StringComparison.Ordinal)
-                && (safeGn == "EnabledObstacleType" || safeGn == "EnergyType" || safeGn == "SongSpeed"))
+            if (!isStruct && ns == "GlobalNamespace" && parentCppName.StartsWith("GameplayModifiers_PlayerSaveDataV1", StringComparison.Ordinal) && (safeGn == "EnabledObstacleType" || safeGn == "EnergyType" || safeGn == "SongSpeed"))
                 isStruct = true;
             writer.WriteLine($"{indent}    public partial {(isStruct ? "struct" : "class")} {safeGn}{gp}");
             writer.WriteLine($"{indent}    {{");
@@ -1563,6 +1643,7 @@ class TypeData
 {
     public string Namespace { get; set; } = "";
     public string TypeName { get; set; } = "";
+    public List<GeneratedPropertyInfo> Properties { get; set; } = new();
     public List<FieldInfo> Fields { get; set; } = new();
     public List<MethodInfo> Methods { get; set; } = new();
     public bool IsValueType { get; set; }
@@ -1592,4 +1673,27 @@ class ParameterInfo
 {
     public string Type { get; set; } = "";
     public string Name { get; set; } = "";
+}
+
+class GeneratedTypeMetadata
+{
+    public string Namespace { get; set; } = "";
+    public string TypeName { get; set; } = "";
+    public bool IsValueType { get; set; }
+    public bool IsInterface { get; set; }
+    public bool IsStatic { get; set; }
+    public bool IsAbstract { get; set; }
+    public string BaseType { get; set; }
+    public List<GeneratedPropertyInfo> Properties { get; set; } = new();
+    public List<FieldInfo> Fields { get; set; } = new();
+    public List<MethodInfo> Methods { get; set; } = new();
+}
+
+class GeneratedPropertyInfo
+{
+    public string Name { get; set; } = "";
+    public string Type { get; set; } = "";
+    public bool HasGetter { get; set; }
+    public bool HasSetter { get; set; }
+    public string BackingFieldName { get; set; } = "";
 }

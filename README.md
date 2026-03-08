@@ -4,13 +4,18 @@ a POC for making beat saber quest mods in C#
 
 todo
 
-- make sure TypeGenerator and Transpiler both work for the gen types
-- change SampleMod to use the new TypeGenerator types
-- make everything (Transpiler, TypeGenerator) not have less hardcoded stuff
+- validate more mods than `SampleMod`
+- expand control-flow reconstruction past simple forward-branch `if` patterns
+- regenerate committed type outputs after the next full `TypeGenerator` run
 
 what is working?
 
-- Transpiler works for SampleMod (have not tested other stuff yet)
+- `CoreMod` contains the mod-facing attributes
+- `Transpiler` consumes prebuilt assemblies instead of invoking `dotnet build`
+- `Transpiler` now works from compiled assemblies / IL instead of parsing C# syntax trees
+- `Transpiler` consumes shared generated type metadata when it is available
+- `Transpiler` works for `SampleMod`
+- `TypeGenerator` can emit `GeneratedTypes.cs` plus `GeneratedTypes.metadata.json`
 
 ## Credits
 

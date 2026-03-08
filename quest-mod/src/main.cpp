@@ -1,11 +1,11 @@
 #include "main.hpp"
 #include "scotland2/shared/modloader.h"
 
-#include "GlobalNamespace/StandardLevelDetailViewController.hpp"
 #include "GlobalNamespace/StandardLevelDetailView.hpp"
-#include "UnityEngine/UI/Button.hpp"
+#include "GlobalNamespace/StandardLevelDetailViewController.hpp"
 #include "HMUI/CurvedTextMeshPro.hpp"
 #include "UnityEngine/GameObject.hpp"
+#include "UnityEngine/UI/Button.hpp"
 
 static modloader::ModInfo modInfo{"com.example.testmod", "1.0.0", 0};
 
@@ -19,11 +19,10 @@ MAKE_HOOK_MATCH(
     &GlobalNamespace::StandardLevelDetailViewController::DidActivate,
     void,
     GlobalNamespace::StandardLevelDetailViewController* self, bool firstActivation, bool addedToHierarchy, bool screenSystemEnabling) {
-
     OnLevelScreenActivateHook(self, firstActivation, addedToHierarchy, screenSystemEnabling);
     if (Enabled) {
         auto detailView = self->_standardLevelDetailView;
-        auto actionButton = detailView->actionButton;
+        auto actionButton = detailView->_actionButton;
         auto gameObject = actionButton->get_gameObject();
         HMUI::CurvedTextMeshPro* buttonText = gameObject->GetComponentInChildren<HMUI::CurvedTextMeshPro*>();
         buttonText->set_text(ButtonText);

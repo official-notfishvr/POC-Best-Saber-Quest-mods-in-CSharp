@@ -1,7 +1,7 @@
-namespace Transpiler;
+namespace CoreMod;
 
 [AttributeUsage(AttributeTargets.Method)]
-public class HookAttribute : Attribute
+public sealed class HookAttribute : Attribute
 {
     public string MethodName { get; }
     public string? ClassName { get; set; }
@@ -13,7 +13,7 @@ public class HookAttribute : Attribute
 }
 
 [AttributeUsage(AttributeTargets.Class)]
-public class ModAttribute : Attribute
+public sealed class ModAttribute : Attribute
 {
     public string Id { get; }
     public string Version { get; }
@@ -26,7 +26,7 @@ public class ModAttribute : Attribute
 }
 
 [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
-public class ConfigAttribute : Attribute
+public sealed class ConfigAttribute : Attribute
 {
     public string? DisplayName { get; set; }
     public string? Description { get; set; }

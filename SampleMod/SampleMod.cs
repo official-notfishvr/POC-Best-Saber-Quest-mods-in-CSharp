@@ -1,6 +1,6 @@
+using CoreMod;
 using GlobalNamespace;
 using HMUI;
-using Transpiler;
 
 namespace SampleMod;
 
@@ -21,7 +21,7 @@ public static class TestMod
         if (Enabled)
         {
             var detailView = self._standardLevelDetailView;
-            var actionButton = detailView.actionButton;
+            var actionButton = detailView._actionButton;
             var gameObject = actionButton.get_GameObject();
             var buttonText = gameObject.GetComponentInChildren<CurvedTextMeshPro>();
             buttonText.set_Text(ButtonText);
